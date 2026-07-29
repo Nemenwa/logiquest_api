@@ -1,9 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PuzzlesService } from './puzzles.service';
 import { Puzzle } from './entities/puzzle.entity';
+import { PuzzleTranslation } from './entities/puzzle-translation.entity';
 import { Category } from '../categories/entities/category.entity';
+import { Tag } from '../tags/entities/tag.entity';
+import { Role } from '../common/enums/role.enum';
 
 describe('PuzzlesService', () => {
   let service: PuzzlesService;
@@ -12,6 +15,7 @@ describe('PuzzlesService', () => {
     create: jest.fn().mockImplementation((dto) => dto),
     save: jest.fn().mockImplementation((puz) => Promise.resolve({ id: 'puz-uuid', ...puz, createdAt: new Date() })),
     findOne: jest.fn(),
+    find: jest.fn(),
     remove: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
@@ -20,8 +24,14 @@ describe('PuzzlesService', () => {
     findOne: jest.fn(),
   };
 
+  const mockTagRepository = {
+    find: jest.fn(),
+  };
+
   const mockQueryBuilder = {
     leftJoinAndSelect: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
+    leftJoin: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
@@ -41,6 +51,19 @@ describe('PuzzlesService', () => {
           provide: getRepositoryToken(Category),
           useValue: mockCategoryRepository,
         },
+        {
+  provide: getRepositoryToken(PuzzleTranslation),
+  useValue: {
+    create: jest.fn(),
+    save: jest.fn(),
+    findOne: jest.fn(),
+    find: jest.fn(),
+  },
+},
+{
+  provide: getRepositoryToken(Tag),
+  useValue: mockTagRepository,
+},
       ],
     }).compile();
 
@@ -124,7 +147,7 @@ describe('PuzzlesService', () => {
 
   describe('findMySubmissions', () => {
     it('should return puzzles by authorId', async () => {
-      mockPuzzleRepository.find = jest.fn().mockResolvedValue([{ id: 'puz-1' }]);
+      mockPuzzleRepository.find.mockResolvedValue([{ id: 'puz-1' }]);
 
       const result = await service.findMySubmissions('author-1');
 
@@ -180,6 +203,39 @@ describe('PuzzlesService', () => {
         categoryId: uuid,
       });
     });
+
+    it('should filter by one or more tag slugs', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAll({ tags: 'deduction, multi-step' });
+
+      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
+        'puzzle.tags',
+        'filterTags',
+        'filterTags.slug IN (:...tagSlugs)',
+        { tagSlugs: ['deduction', 'multi-step'] },
+      );
+    });
+
+    it('should not join for tags when the tags filter is empty', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAll({ tags: '  ,  ' });
+
+      expect(mockQueryBuilder.innerJoin).not.toHaveBeenCalled();
+    });
+
+    it('should match puzzle title, description, and tag names when searching', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAll({ search: 'switch' });
+
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith('puzzle.tags', 'searchTags');
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        '(puzzle.title ILIKE :search OR puzzle.description ILIKE :search OR searchTags.name ILIKE :search)',
+        { search: '%switch%' },
+      );
+    });
   });
 
   describe('findOne', () => {
@@ -192,7 +248,7 @@ describe('PuzzlesService', () => {
       expect(result).toEqual(puzzle);
       expect(mockPuzzleRepository.findOne).toHaveBeenCalledWith({
         where: { id: 'puz-1' },
-        relations: { category: true },
+        relations: { category: true, tags: true },
       });
     });
 
@@ -248,6 +304,70 @@ describe('PuzzlesService', () => {
 
       await expect(service.remove('missing')).rejects.toThrow(NotFoundException);
       expect(mockPuzzleRepository.remove).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('setTags', () => {
+    it('should allow the puzzle author to set tags', async () => {
+      const puzzle = { id: 'puz-1', authorId: 'author-1', tags: [] };
+      const tags = [{ id: 'tag-1' }, { id: 'tag-2' }];
+      mockPuzzleRepository.findOne.mockResolvedValue(puzzle);
+      mockTagRepository.find.mockResolvedValue(tags);
+
+      const result = await service.setTags('puz-1', ['tag-1', 'tag-2'], 'author-1', Role.USER);
+
+      expect(result.tags).toEqual(tags);
+      expect(mockPuzzleRepository.save).toHaveBeenCalledWith(puzzle);
+    });
+
+    it('should allow an admin to set tags on any puzzle', async () => {
+      const puzzle = { id: 'puz-1', authorId: 'author-1', tags: [] };
+      const tags = [{ id: 'tag-1' }];
+      mockPuzzleRepository.findOne.mockResolvedValue(puzzle);
+      mockTagRepository.find.mockResolvedValue(tags);
+
+      const result = await service.setTags('puz-1', ['tag-1'], 'admin-1', Role.ADMIN);
+
+      expect(result.tags).toEqual(tags);
+    });
+
+    it('should throw ForbiddenException if the user is neither the author nor an admin', async () => {
+      const puzzle = { id: 'puz-1', authorId: 'author-1', tags: [] };
+      mockPuzzleRepository.findOne.mockResolvedValue(puzzle);
+
+      await expect(service.setTags('puz-1', ['tag-1'], 'other-user', Role.USER)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockPuzzleRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException if the puzzle does not exist', async () => {
+      mockPuzzleRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.setTags('missing', ['tag-1'], 'author-1', Role.USER)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw NotFoundException if one or more tag ids do not exist', async () => {
+      const puzzle = { id: 'puz-1', authorId: 'author-1', tags: [] };
+      mockPuzzleRepository.findOne.mockResolvedValue(puzzle);
+      mockTagRepository.find.mockResolvedValue([{ id: 'tag-1' }]);
+
+      await expect(service.setTags('puz-1', ['tag-1', 'missing-tag'], 'author-1', Role.USER)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockPuzzleRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('should clear tags when given an empty array', async () => {
+      const puzzle = { id: 'puz-1', authorId: 'author-1', tags: [{ id: 'tag-1' }] };
+      mockPuzzleRepository.findOne.mockResolvedValue(puzzle);
+
+      const result = await service.setTags('puz-1', [], 'author-1', Role.USER);
+
+      expect(result.tags).toEqual([]);
+      expect(mockTagRepository.find).not.toHaveBeenCalled();
     });
   });
 });

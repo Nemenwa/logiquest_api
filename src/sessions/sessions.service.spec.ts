@@ -43,6 +43,7 @@ describe('SessionsService', () => {
         userId: 'u1',
         puzzleId: 'p1',
         status: SessionStatus.ACTIVE,
+        locale: 'en',
       });
       expect(mockRepo.save).toHaveBeenCalledWith(created);
       expect(result).toEqual(saved);

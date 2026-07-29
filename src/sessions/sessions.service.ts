@@ -11,19 +11,81 @@ import { CreateSessionDto } from './dto/create-session.dto';
 import { SubmitSolutionDto } from './dto/submit-solution.dto';
 import { SessionGateway } from '../gateway/session.gateway';
 
+/**
+ * In-memory session record used by the hints module for lightweight,
+ * non-DB backed session state tracking during a request lifecycle.
+ */
+export interface InMemorySession {
+  id: string;
+  puzzleId: string;
+  status: string;
+}
+import { DEFAULT_LOCALE } from '../config/locale.config';
+
 @Injectable()
 export class SessionsService {
+  /** In-memory store used by hints/scoring helpers */
+  private inMemorySessions: Map<string, InMemorySession> = new Map();
+
   constructor(
     @InjectRepository(Session)
     private readonly sessionRepo: Repository<Session>,
     private readonly sessionGateway: SessionGateway,
   ) {}
 
-  async start(userId: string, dto: CreateSessionDto): Promise<Session> {
+  // ---------------------------------------------------------------------------
+  // In-memory session helpers (used by HintsService and similar consumers)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Create a lightweight in-memory session record.
+   * Used by the hints module to track session state without a DB round-trip.
+   */
+  createSession(sessionId: string, puzzleId: string): InMemorySession {
+    const session: InMemorySession = {
+      id: sessionId,
+      puzzleId,
+      status: 'ACTIVE',
+    };
+    this.inMemorySessions.set(sessionId, session);
+    return session;
+  }
+
+  /**
+   * Retrieve an in-memory session by ID.
+   * Throws NotFoundException if the session does not exist.
+   */
+  getSession(sessionId: string): InMemorySession {
+    const session = this.inMemorySessions.get(sessionId);
+    if (!session) {
+      throw new NotFoundException(`Session ${sessionId} not found`);
+    }
+    return session;
+  }
+
+  /**
+   * Update the status of an in-memory session.
+   * Throws NotFoundException if the session does not exist.
+   */
+  updateSessionStatus(sessionId: string, status: string): InMemorySession {
+    const session = this.inMemorySessions.get(sessionId);
+    if (!session) {
+      throw new NotFoundException(`Session ${sessionId} not found`);
+    }
+    session.status = status;
+    return session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // DB-backed session operations
+  // ---------------------------------------------------------------------------
+
+  async start(userId: string, dto: CreateSessionDto, locale?: string): Promise<Session> {
     const session = this.sessionRepo.create({
       userId,
       puzzleId: dto.puzzleId,
       status: SessionStatus.ACTIVE,
+      locale: locale ?? dto.locale ?? DEFAULT_LOCALE,
     });
     const savedSession = await this.sessionRepo.save(session);
     

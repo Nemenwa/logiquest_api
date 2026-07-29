@@ -19,8 +19,6 @@ describe('AdminService', () => {
     findAndCount: jest.fn(),
     findOne: jest.fn(),
     save: jest.fn(),
-    findOne: jest.fn(),
-    save: jest.fn(),
     count: jest.fn(),
   };
 

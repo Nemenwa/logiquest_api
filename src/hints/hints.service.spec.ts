@@ -1,8 +1,31 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { HintsService } from './hints.service';
 import { SessionsService } from '../sessions/sessions.service';
+import { Session } from '../sessions/entities/session.entity';
 import { ScoringService } from '../scoring/scoring.service';
+import { Score } from '../scoring/entities/score.entity';
+import { EventBusService } from '../common/events/event-bus.service';
 import { BadRequestException } from '@nestjs/common';
+
+// Minimal no-op repository mock for SessionsService's DB dependency.
+// The hints tests exercise only the in-memory helpers on SessionsService
+// (createSession / getSession / updateSessionStatus).
+const mockSessionRepo = {
+  create: jest.fn(),
+  save: jest.fn(),
+  findOne: jest.fn(),
+  find: jest.fn(),
+};
+
+const mockScoreRepo = {
+  create: jest.fn(),
+  save: jest.fn(),
+  find: jest.fn(),
+  createQueryBuilder: jest.fn(),
+};
+
+const mockEventBus = { emit: jest.fn() };
 
 describe('HintsService', () => {
   let service: HintsService;
@@ -14,7 +37,10 @@ describe('HintsService', () => {
       providers: [
         HintsService,
         SessionsService,
+        { provide: getRepositoryToken(Session), useValue: mockSessionRepo },
         ScoringService,
+        { provide: getRepositoryToken(Score), useValue: mockScoreRepo },
+        { provide: EventBusService, useValue: mockEventBus },
       ],
     }).compile();
 

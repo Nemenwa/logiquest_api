@@ -6,6 +6,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import type { HealthCheckResult } from './health.types';
 import { HealthService } from './health.service';
@@ -19,6 +24,7 @@ import { HealthService } from './health.service';
  * - `@SkipThrottle()` exempts them from the global rate limiter, since probes
  *   are polled frequently and must not be throttled out of service.
  */
+@ApiTags('health')
 @Public()
 @SkipThrottle()
 @Controller('health')
@@ -31,6 +37,12 @@ export class HealthController {
    */
   @Get('live')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Liveness probe — confirms the process is running' })
+  @ApiResponse({
+    status: 200,
+    description: 'Process is alive',
+    schema: { example: { status: 'ok', info: { process: { status: 'up' } }, error: {}, details: { process: { status: 'up' } }, uptime: 3600.5, timestamp: '2024-07-01T12:00:00.000Z' } },
+  })
   liveness(): Promise<HealthCheckResult> {
     return this.health.checkLiveness();
   }
@@ -41,6 +53,17 @@ export class HealthController {
    * service is taken out of rotation rather than served a generic 500.
    */
   @Get('ready')
+  @ApiOperation({ summary: 'Readiness probe — confirms all dependencies (DB, cache) are reachable' })
+  @ApiResponse({
+    status: 200,
+    description: 'All dependencies are healthy',
+    schema: { example: { status: 'ok', info: { db: { status: 'up' } }, error: {}, details: { db: { status: 'up' } }, uptime: 3600.5, timestamp: '2024-07-01T12:00:00.000Z' } },
+  })
+  @ApiResponse({
+    status: 503,
+    description: 'One or more dependencies are unhealthy — service is not ready',
+    schema: { example: { status: 'error', info: {}, error: { db: { status: 'down', message: 'Connection refused' } }, details: { db: { status: 'down' } }, uptime: 3600.5, timestamp: '2024-07-01T12:00:00.000Z' } },
+  })
   async readiness(): Promise<HealthCheckResult> {
     const result = await this.health.checkReadiness();
     if (result.status !== 'ok') {

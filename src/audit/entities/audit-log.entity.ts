@@ -6,17 +6,20 @@ export class AuditLog {
   id!: string;
 
   @Column()
-  action!: string;
+  actorId!: string;
 
   @Column()
-  performedBy!: string;
+  action!: string;
+
+  @Column({ nullable: true })
+  targetEntity!: string;
 
   @Column({ nullable: true })
   targetId!: string;
 
   @Column({ type: 'json', nullable: true })
-  metadata!: object;
+  payload!: object;
 
-  @CreateDateColumn()
-  createdAt!: Date;
+  @CreateDateColumn({ name: 'timestamp' })
+  timestamp!: Date;
 }

@@ -2,8 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module';
 import { DataSource } from 'typeorm';
 import { User as AuthUser } from '../auth/entities/user.entity';
-import { User as UserUser } from '../users/entities/user.entity';
-import { Puzzle } from './entities/puzzle.entity';
+import { User as UserUser, UserRole } from '../users/entities/user.entity';
+import { Puzzle } from '../puzzles/entities/puzzle.entity';
 import { Role } from '../common/enums/role.enum';
 import * as bcrypt from 'bcrypt';
 
@@ -55,18 +55,21 @@ async function bootstrap() {
     // Seed Sample Users (User Users)
     const sampleUserUsers = [
       {
+        username: 'alice',
         email: 'alice@example.com',
         password: 'password123',
         role: Role.USER,
         isBanned: false,
       },
       {
+        username: 'bob',
         email: 'bob@example.com',
         password: 'password123',
         role: Role.USER,
         isBanned: false,
       },
       {
+        username: 'admin_user',
         email: 'admin@example.com',
         password: 'adminpassword',
         role: Role.ADMIN,
@@ -79,9 +82,10 @@ async function bootstrap() {
       if (!exists) {
         const hashedPassword = await bcrypt.hash(u.password, 10);
         const user = userUserRepo.create({
+          username: u.username,
           email: u.email,
-          password: hashedPassword,
-          role: u.role,
+          passwordHash: hashedPassword,
+          role: u.role === Role.ADMIN ? UserRole.ADMIN : UserRole.PLAYER,
           isBanned: u.isBanned,
         });
         await userUserRepo.save(user);

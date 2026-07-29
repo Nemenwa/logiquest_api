@@ -1,4 +1,12 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToMany,
+} from 'typeorm';
+import { OAuthProvider } from './oauth-provider.entity';
 
 @Entity('users')
 export class User {
@@ -11,8 +19,17 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column()
+  @Column({ nullable: true })
   password: string;
+
+  @Column({ nullable: true })
+  displayName: string;
+
+  @Column({ nullable: true })
+  avatarUrl: string;
+
+  @OneToMany(() => OAuthProvider, (oauth) => oauth.user, { cascade: true })
+  oauthProviders: OAuthProvider[];
 
   @CreateDateColumn()
   createdAt: Date;
