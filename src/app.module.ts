@@ -22,6 +22,7 @@ import { SessionsModule } from './sessions/sessions.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { NftModule } from './nft/nft.module';
 import { CalibrationModule } from './calibration/calibration.module';
+import { GatewayModule } from './gateway/gateway.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { CalibrationModule } from './calibration/calibration.module';
     NftModule,
     EventEmitterModule.forRoot(),
     CalibrationModule,
+    GatewayModule,
   ],
   providers: [EventService],
 })
